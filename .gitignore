@@ -1,0 +1,22 @@
+/.env
+/customs_bot.db
+
+# Виртуальное окружение
+venv/
+.venv/
+
+# PyCharm
+.idea/
+
+# Python
+__pycache__/
+*.py[cod]
+*.sqlite3
+
+# Django
+*.log
+*.pot
+*.pyc
+db.sqlite3
+/staticfiles/
+media/
