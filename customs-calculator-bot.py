@@ -448,21 +448,10 @@ async def choose_car(message: types.Message, state: FSMContext):
 
 
 # Truck handler
-# @dp.message(F.text == "🚛 Вантажний автомобіль")
-# async def choose_truck(message: types.Message, state: FSMContext):
-#     """Start of calculation for a truck"""
-#     await state.update_data(vehicle_type="truck")
-#     await state.set_state(CalculationStates.entering_cost)
-#     await message.answer(
-#         "🚛 <b>Вантажний автомобіль (до 5 тонн)</b>\n\n"
-#         "Введіть вартість:\n"
-#         "<code>10000</code>",
-#         parse_mode="HTML"
-#     )
-
-@dp.message(F.text == "Вантажний автомобіль")
+@dp.message(F.text == "🚛 Вантажний автомобіль")
 async def choose_truck(message: types.Message, state: FSMContext):
     """Выбор типа двигателя грузовика"""
+    await state.clear()
     await message.answer(
         "Виберіть тип двигуна:\n\n"
         "• <b>Бензин</b> — мито 5%\n"
