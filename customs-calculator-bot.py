@@ -245,9 +245,32 @@ def calculate_electric_car(cost_uah: float, battery_kwh: float, with_benefits: b
 
 # Calculation function for a truck
 def calculate_truck(cost_uah: float, engine_volume: float, year: int) -> Dict:
-    """Calculation for a truck up to 5 tons"""
+    """Calculation for a petrol truck up to 5 tons"""
     # 5% duty for freight
     duty = cost_uah * 0.05
+
+    current_year = datetime.now().year
+    age = current_year - year
+
+    if age < 5:
+        excise_rate = 0.02
+    elif age < 8:
+        excise_rate = 0.8
+    else:
+        excise_rate = 1.0
+
+    excise_eur = engine_volume  * excise_rate
+
+    return {
+        'duty': duty,
+        'excise_eur': excise_eur,
+        'age_coef': excise_rate
+    }
+
+def calculate_diesel_truck(cost_uah: float, engine_volume: float, year: int) -> Dict:
+    """Calculation for a diesel truck up to 5 tons"""
+    # 5% duty for freight
+    duty = cost_uah * 0.10
 
     current_year = datetime.now().year
     age = current_year - year
@@ -366,6 +389,16 @@ def get_car_type_menu() -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(inline_keyboard=buttons)
 
 
+def get_truck_type_menu() -> InlineKeyboardMarkup:
+    """Меню выбора типа двигателя для грузовика"""
+    buttons = [
+        [InlineKeyboardButton(text="⛽ Бензин (5%)", callback_data="truck_petrol")],
+        [InlineKeyboardButton(text="Дизель (10%)", callback_data="truck_diesel")],
+        [InlineKeyboardButton(text="Назад", callback_data="back_main")]
+    ]
+    return InlineKeyboardMarkup(inline_keyboard=buttons)
+
+
 # Motorcycle type selection menu
 def get_motorcycle_type_menu() -> InlineKeyboardMarkup:
     """Motorcycle Types Menu"""
@@ -415,17 +448,29 @@ async def choose_car(message: types.Message, state: FSMContext):
 
 
 # Truck handler
-@dp.message(F.text == "🚛 Вантажний автомобіль")
+# @dp.message(F.text == "🚛 Вантажний автомобіль")
+# async def choose_truck(message: types.Message, state: FSMContext):
+#     """Start of calculation for a truck"""
+#     await state.update_data(vehicle_type="truck")
+#     await state.set_state(CalculationStates.entering_cost)
+#     await message.answer(
+#         "🚛 <b>Вантажний автомобіль (до 5 тонн)</b>\n\n"
+#         "Введіть вартість:\n"
+#         "<code>10000</code>",
+#         parse_mode="HTML"
+#     )
+
+@dp.message(F.text == "Вантажний автомобіль")
 async def choose_truck(message: types.Message, state: FSMContext):
-    """Start of calculation for a truck"""
-    await state.update_data(vehicle_type="truck")
-    await state.set_state(CalculationStates.entering_cost)
+    """Выбор типа двигателя грузовика"""
     await message.answer(
-        "🚛 <b>Вантажний автомобіль (до 5 тонн)</b>\n\n"
-        "Введіть вартість:\n"
-        "<code>10000</code>",
+        "Виберіть тип двигуна:\n\n"
+        "• <b>Бензин</b> — мито 5%\n"
+        "• <b>Дизель</b> — мито 10%",
+        reply_markup=get_truck_type_menu(),
         parse_mode="HTML"
     )
+    await state.set_state(CalculationStates.choosing_vehicle)
 
 
 # Motorcycle handler
@@ -590,6 +635,21 @@ async def process_car_type(callback: types.CallbackQuery, state: FSMContext):
             parse_mode="HTML"
         )
 
+    await callback.answer()
+
+@dp.callback_query(F.data.startswith("truck_"))
+async def process_truck_type(callback: types.CallbackQuery, state: FSMContext):
+    """Обработка выбора типа грузовика"""
+    engine = callback.data.replace("truck_", "")
+    vehicle_type = f"truck_{engine}"
+    await state.update_data(vehicle_type=vehicle_type)
+
+    await state.set_state(CalculationStates.entering_cost)
+    await callback.message.edit_text(
+        "Введіть вартість вантажного автомобіля:\n"
+        "<code>12000</code>",
+        parse_mode="HTML"
+    )
     await callback.answer()
 
 
@@ -957,8 +1017,12 @@ async def perform_calculation(message: types.Message, state: FSMContext, date: d
         total_uah = 0
         cost_uah = 0
         additional_uah = 0
-    elif vehicle_type == "truck":
+    # elif vehicle_type == "truck":
+    #     result = calculate_truck(total_uah, data['engine_volume'], data['year'])
+    elif vehicle_type == "truck_petrol":
         result = calculate_truck(total_uah, data['engine_volume'], data['year'])
+    elif vehicle_type == "truck_diesel":
+        result = calculate_diesel_truck(total_uah, data['engine_volume'], data['year'])
     elif vehicle_type == "moto_petrol":
         result = calculate_motorcycle(total_uah, data['engine_volume'])
     elif vehicle_type == "moto_electric":
@@ -1031,8 +1095,12 @@ async def perform_calculation(message: types.Message, state: FSMContext, date: d
     response += f"<b>Митні платежі:</b>\n"
 
     # We show the correct duty rate
-    if vehicle_type == "truck":
+    # if vehicle_type == "truck":
+    #     response += f"• Мито (5%): {duty:.2f} грн\n"
+    if vehicle_type == "truck_petrol":
         response += f"• Мито (5%): {duty:.2f} грн\n"
+    elif vehicle_type == "truck_diesel":
+        response += f"• Мито (10%): {duty:.2f} грн\n"
     elif vehicle_type.startswith("car_electric") or vehicle_type == "moto_electric":
         if vehicle_type == "car_electric_benefits":
             response += f"• Мито (0% - пільга): {duty:.2f} грн\n"
