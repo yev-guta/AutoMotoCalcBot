@@ -359,21 +359,21 @@ def get_main_menu() -> ReplyKeyboardMarkup:
         [KeyboardButton(text="🚛 Вантажний автомобіль")],
         [KeyboardButton(text="🏍️ Мотоцикл")],
         [KeyboardButton(text="💱 Курс валют")],
-        [KeyboardButton(text="🚢 Доставка Європа - Україна")],
+        #[KeyboardButton(text="🚢 Доставка Європа - Україна")],
         [KeyboardButton(text="💬 Зв'язок із розробником")],
         [KeyboardButton(text="📜 Історія розрахунків")]
     ]
     return ReplyKeyboardMarkup(keyboard=kb, resize_keyboard=True)
 
-@dp.message(F.text == "🚢 Доставка Європа - Україна")
-async def contact_carrier(message: types.Message):
-    """Контакт перевозчика"""
-    await message.answer(
-        f"🚢 <b>Доставка Європа - Україна</b>\n\n"
-        f"📞 Зв'язатися з перевізником: @{CARRIER_USERNAME}\n\n"
-        f"💬 Запитайте вартість доставки Вашого автомобіля!",
-        parse_mode="HTML"
-    )
+# @dp.message(F.text == "🚢 Доставка Європа - Україна")
+# async def contact_carrier(message: types.Message):
+#     """Контакт перевозчика"""
+#     await message.answer(
+#         f"🚢 <b>Доставка Європа - Україна</b>\n\n"
+#         f"📞 Зв'язатися з перевізником: @{CARRIER_USERNAME}\n\n"
+#         f"💬 Запитайте вартість доставки Вашого автомобіля!",
+#         parse_mode="HTML"
+#     )
 
 
 # Menu for selecting the type of passenger car
