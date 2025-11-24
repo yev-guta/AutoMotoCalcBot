@@ -485,12 +485,12 @@ async def show_rates_menu(message: types.Message, state: FSMContext):
 
 
 # "Contact with carrier" handler
-@dp.message(F.text == "📞 Зв'язок із перевізником")
-async def contact_carrier(message: types.Message):
-    """Carrier contact"""
-    await message.answer(
-        f"📞 Зв'язатися з перевізником: @{CARRIER_USERNAME}"
-    )
+# @dp.message(F.text == "📞 Зв'язок із перевізником")
+# async def contact_carrier(message: types.Message):
+#     """Carrier contact"""
+#     await message.answer(
+#         f"📞 Зв'язатися з перевізником: @{CARRIER_USERNAME}"
+#     )
 
 
 # "Contact the Developer" handler
