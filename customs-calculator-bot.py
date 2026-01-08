@@ -182,7 +182,7 @@ def calculate_petrol_car(cost_uah: float, engine_volume: float, year: int) -> Di
     # Duty 10%
     duty = cost_uah * 0.10
 
-    # Акциз
+    # Excise tax
     if engine_volume <= 3000:
         excise_rate = 50  # euro per 1000 cm3
     else:
@@ -219,28 +219,45 @@ def calculate_diesel_car(cost_uah: float, engine_volume: float, year: int) -> Di
 
 
 # Calculation function for electric vehicle
+# def calculate_electric_car(cost_uah: float, battery_kwh: float, with_benefits: bool) -> Dict:
+#     """Calculation for an electric vehicle"""
+#     excise_eur = battery_kwh * 1.0
+#     duty = 0.0
+#
+#     if with_benefits:
+#         # With benefits until December 31, 2025
+#         vat = 0.0
+#         return {
+#             'duty': duty,
+#             'excise_eur': excise_eur,
+#             'vat': vat,
+#             'with_benefits': True
+#         }
+#     else:
+#         # No benefits
+#         vat = 0.0
+#         return {
+#             'duty': duty,
+#             'excise_eur': excise_eur,
+#             'vat': vat,
+#             'with_benefits': False
+#         }
+
 def calculate_electric_car(cost_uah: float, battery_kwh: float, with_benefits: bool) -> Dict:
     """Calculation for an electric vehicle"""
     excise_eur = battery_kwh * 1.0
+    duty = 0.0
+    return {
+        'duty': duty,
+        'excise_eur': excise_eur,
+        'with_benefits': with_benefits
+    }
 
-    if with_benefits:
-        # With benefits until December 31, 2025
-        duty = 0
-        vat_base = 0
-        return {
-            'duty': duty,
-            'excise_eur': excise_eur,
-            'vat_base': vat_base,
-            'with_benefits': True
-        }
-    else:
-        # No benefits
-        duty = 0
-        return {
-            'duty': duty,
-            'excise_eur': excise_eur,
-            'with_benefits': False
-        }
+def calculate_hybrid_petrol(cost_uah: float, engine_volume: float, year: int) -> Dict:
+    return calculate_petrol_car(cost_uah, engine_volume, year)
+
+def calculate_hybrid_diesel(cost_uah: float, engine_volume: float, year: int) -> Dict:
+    return calculate_diesel_car(cost_uah, engine_volume, year)
 
 
 # Calculation function for a truck
@@ -288,6 +305,16 @@ def calculate_diesel_truck(cost_uah: float, engine_volume: float, year: int) -> 
         'duty': duty,
         'excise_eur': excise_eur,
         'age_coef': excise_rate
+    }
+
+# Расчёт для электрического грузовика (электровантажівка)
+def calculate_electric_truck(cost_uah: float) -> Dict:
+    """Электрогрузовик: мито 10%, акциз 0, ПДВ 20%, пенсионный 0"""
+    duty = cost_uah * 0.10
+    excise_eur = 0.0
+    return {
+        'duty': duty,
+        'excise_eur': excise_eur,
     }
 
 
@@ -382,18 +409,21 @@ def get_car_type_menu() -> InlineKeyboardMarkup:
     buttons = [
         [InlineKeyboardButton(text="⛽ Бензин", callback_data="car_petrol")],
         [InlineKeyboardButton(text="🛢️ Дизель", callback_data="car_diesel")],
-        [InlineKeyboardButton(text="⚡ Електро (з пільгами)", callback_data="car_electric_benefits")],
+        # [InlineKeyboardButton(text="⚡ Електро (Пільги закінчилися 31.12.2025)", callback_data="car_electric_benefits")],
         [InlineKeyboardButton(text="⚡ Електро (без пільг)", callback_data="car_electric_no_benefits")],
+        [InlineKeyboardButton(text="🔌 Гібрид (бензин)", callback_data="car_hybrid_petrol")],
+        [InlineKeyboardButton(text="🔌 Гібрид (дизель)", callback_data="car_hybrid_diesel")],
         [InlineKeyboardButton(text="◀️ Назад", callback_data="back_main")]
     ]
     return InlineKeyboardMarkup(inline_keyboard=buttons)
 
 
 def get_truck_type_menu() -> InlineKeyboardMarkup:
-    """Меню выбора типа двигателя для грузовика"""
+    """Truck engine type selection menu"""
     buttons = [
         [InlineKeyboardButton(text="⛽ Бензин (5%)", callback_data="truck_petrol")],
         [InlineKeyboardButton(text="Дизель (10%)", callback_data="truck_diesel")],
+        [InlineKeyboardButton(text="⚡ Електро (акциз 0)", callback_data="truck_electric")],
         [InlineKeyboardButton(text="Назад", callback_data="back_main")]
     ]
     return InlineKeyboardMarkup(inline_keyboard=buttons)
@@ -479,7 +509,7 @@ async def show_rates_menu(message: types.Message, state: FSMContext):
     """Exchange Rates Menu"""
     await state.clear()  # Clearing the state
     await message.answer(
-        "📊 Select a date to view the course:",
+        "📊 Виберіть дату для перегляду курсу:",
         reply_markup=get_date_menu()
     )
 
@@ -606,13 +636,40 @@ async def process_car_type(callback: types.CallbackQuery, state: FSMContext):
     await state.update_data(vehicle_type=f"car_{car_type}")
     #await state.set_state(CalculationStates.entering_cost)
 
-    # For electric vehicles, we immediately request the battery capacity
-    if car_type in ["electric_benefits", "electric_no_benefits"]:
+    # Для электро С ЛЬГОТАМИ - только батарея
+    if car_type == "electric_benefits":
         await state.set_state(CalculationStates.entering_battery)
         await callback.message.edit_text(
-            "⚡ <b>Електромобіль</b>\n\n"
+            "⚡ <b>Електромобіль (З ПІЛЬГАМИ)</b>\n\n"
             "🔋 Введіть ємність батареї у кВт·год.:\n"
             "<code>75</code>",
+            parse_mode="HTML"
+        )
+    # Для электро БЕЗ ЛЬГОТ - сначала стоимость
+    elif car_type == "electric_no_benefits":
+        await state.set_state(CalculationStates.entering_cost)
+        await callback.message.edit_text(
+            "⚡ <b>Електромобіль (БЕЗ ПІЛЬГ)</b>\n\n"
+            "💰 Введіть вартість автомобіля:\n"
+            "<code>15000</code>",
+            parse_mode="HTML"
+        )
+    elif car_type == "hybrid_petrol":
+        await state.update_data(vehicle_type="car_hybrid_petrol")
+        await state.set_state(CalculationStates.entering_cost)
+        await callback.message.edit_text(
+            "🔌 <b>Гібрид (бензин)</b>\n\n"
+            "💰 Введіть вартість автомобіля:\n"
+            "<code>15000</code>",
+            parse_mode="HTML"
+        )
+    elif car_type == "hybrid_diesel":
+        await state.update_data(vehicle_type="car_hybrid_diesel")
+        await state.set_state(CalculationStates.entering_cost)
+        await callback.message.edit_text(
+            "🔌 <b>Гібрид (дизель)</b>\n\n"
+            "💰 Введіть вартість автомобіля:\n"
+            "<code>15000</code>",
             parse_mode="HTML"
         )
     else:
@@ -632,13 +689,21 @@ async def process_truck_type(callback: types.CallbackQuery, state: FSMContext):
     engine = callback.data.replace("truck_", "")
     vehicle_type = f"truck_{engine}"
     await state.update_data(vehicle_type=vehicle_type)
-
     await state.set_state(CalculationStates.entering_cost)
-    await callback.message.edit_text(
-        "Введіть вартість вантажного автомобіля:\n"
-        "<code>12000</code>",
-        parse_mode="HTML"
-    )
+
+    if engine in ("petrol", "diesel"):
+        await callback.message.edit_text(
+            "Введіть вартість вантажного автомобіля:\n"
+            "<code>12000</code>",
+            parse_mode="HTML"
+        )
+    elif engine == "electric":
+        await callback.message.edit_text(
+            "⚡ <b>Електричний вантажний автомобіль</b>\n\n"
+            "💰 Введіть вартість:\n"
+            "<code>30000</code>",
+            parse_mode="HTML"
+        )
     await callback.answer()
 
 
@@ -728,12 +793,27 @@ async def process_additional(message: types.Message, state: FSMContext):
             data = await state.get_data()
             vehicle_type = data['vehicle_type']
 
-            if vehicle_type.startswith("car_electric"):
+            if vehicle_type == "car_electric_benefits":
+                # С льготами - только батарея (стоимость уже 0)
                 await state.set_state(CalculationStates.entering_battery)
                 await message.answer(
                     "🔋 Введіть ємність батареї у кВт·год.:\n"
                     "<code>75</code>",
                     parse_mode="HTML"
+                )
+            elif vehicle_type == "car_electric_no_benefits":
+                # Без льгот - запрашиваем батарею после стоимости
+                await state.set_state(CalculationStates.entering_battery)
+                await message.answer(
+                    "🔋 Введіть ємність батареї у кВт·год.:\n"
+                    "<code>75</code>",
+                    parse_mode="HTML"
+                )
+            elif vehicle_type == "truck_electric":
+                await state.set_state(CalculationStates.choosing_date)
+                await message.answer(
+                    "📅 Виберіть дату курсу валют:",
+                    reply_markup=get_date_menu()
                 )
             elif vehicle_type == "moto_electric":
                 await state.set_state(CalculationStates.choosing_date)
@@ -772,12 +852,27 @@ async def process_additional_currency(callback: types.CallbackQuery, state: FSMC
     data = await state.get_data()
     vehicle_type = data['vehicle_type']
 
-    if vehicle_type.startswith("car_electric"):
+    if vehicle_type == "car_electric_benefits":
+        # С льготами - только батарея (стоимость уже 0)
         await state.set_state(CalculationStates.entering_battery)
         await callback.message.answer(
             "🔋 Введіть ємність батареї у кВт·год.:\n"
             "<code>75</code>",
             parse_mode="HTML"
+        )
+    elif vehicle_type == "car_electric_no_benefits":
+        # Без льгот - запрашиваем батарею после стоимости
+        await state.set_state(CalculationStates.entering_battery)
+        await callback.message.answer(
+            "🔋 Введіть ємність батареї у кВт·год.:\n"
+            "<code>75</code>",
+            parse_mode="HTML"
+        )
+    elif vehicle_type == "truck_electric":
+        await state.set_state(CalculationStates.choosing_date)
+        await callback.message.answer(
+            "📅 Виберіть дату курсу валют:",
+            reply_markup=get_date_menu()
         )
     elif vehicle_type == "moto_electric":
         await state.set_state(CalculationStates.choosing_date)
@@ -793,7 +888,7 @@ async def process_additional_currency(callback: types.CallbackQuery, state: FSMC
             parse_mode="HTML"
         )
     else:
-        # For cars with an engine (petrol/diesel/truck)
+        # For cars with an engine (petrol/diesel/hybrids/truck_petrol/truck_diesel)
         await state.set_state(CalculationStates.entering_engine_volume)
         await callback.message.answer(
             "🔧 Введіть об'єм двигуна см³:\n"
@@ -862,12 +957,17 @@ async def process_battery(message: types.Message, state: FSMContext):
         await state.update_data(battery_kwh=battery_kwh)
         # For electric vehicles, we skip straight to selecting the date.
         # Cost = 0, as it's not needed for the calculation.
-        await state.update_data(
-            cost=0,
-            currency="EUR",
-            additional=0,
-            additional_currency="EUR"
-        )
+        data = await state.get_data()
+        vehicle_type = data['vehicle_type']
+
+        # ТОЛЬКО для электро С ЛЬГОТАМИ обнуляем стоимость
+        if vehicle_type == "car_electric_benefits":
+            await state.update_data(
+                cost=0,
+                currency="EUR",
+                additional=0,
+                additional_currency="EUR"
+            )
         await state.set_state(CalculationStates.choosing_date)
         await message.answer(
             "📅 Виберіть дату курсу валют:",
@@ -949,6 +1049,265 @@ async def show_rate_only(message: types.Message, date: datetime):
 
 
 # Calculation execution function
+# async def perform_calculation(message: types.Message, state: FSMContext, date: datetime):
+#     """Calculation of customs duties"""
+#     data = await state.get_data()
+#
+#     # Получение курсов валют
+#     usd_rate = await get_nbu_rate("USD", date)
+#     eur_rate = await get_nbu_rate("EUR", date)
+#
+#     if not usd_rate or not eur_rate:
+#         await message.answer("❌ Помилка отримання курсу валют")
+#         return
+#
+#     # Converting the cost to hryvnia
+#     cost = data['cost']
+#     currency = data['currency']
+#
+#     if currency == "USD":
+#         cost_rate = usd_rate
+#     elif currency == "EUR":
+#         cost_rate = eur_rate
+#     else:
+#         cost_rate = 1.0
+#
+#     cost_uah = cost * cost_rate
+#
+#     # Converting additional expenses
+#     additional = data.get('additional', 0)
+#     additional_currency = data.get('additional_currency', 'USD')
+#
+#     if additional_currency == "USD":
+#         add_rate = usd_rate
+#     elif additional_currency == "EUR":
+#         add_rate = eur_rate
+#     else:
+#         add_rate = 1.0
+#
+#     additional_uah = additional * add_rate
+#     total_uah = cost_uah + additional_uah
+#
+#     vehicle_type = data['vehicle_type']
+#
+#     # Let's check if it's an electric car
+#     is_electric = vehicle_type.startswith("car_electric") or vehicle_type == "moto_electric" or vehicle_type == "truck_electric"
+#
+#     # Calculation depending on the type of vehicle
+#     if vehicle_type == "car_petrol":
+#         result = calculate_petrol_car(total_uah, data['engine_volume'], data['year'])
+#     elif vehicle_type == "car_diesel":
+#         result = calculate_diesel_car(total_uah, data['engine_volume'], data['year'])
+#     elif vehicle_type == "car_hybrid_petrol":
+#         result = calculate_hybrid_petrol(total_uah, data['engine_volume'], data['year'])
+#     elif vehicle_type == "car_hybrid_diesel":
+#         result = calculate_hybrid_diesel(total_uah, data['engine_volume'], data['year'])
+#     elif vehicle_type.startswith("car_electric"):
+#         with_benefits = "benefits" in vehicle_type
+#         result = calculate_electric_car(total_uah, data['battery_kwh'], with_benefits)  # total_uah не використовується для акцизу
+#
+#         duty = result['duty']  # 0
+#         excise_eur = result['excise_eur']
+#         excise_uah = excise_eur * eur_rate
+#
+#         # # result = calculate_electric_car(total_uah, data['battery_kwh'], with_benefits) car_electric_no_benefits
+#         # result = calculate_electric_car(0, data['battery_kwh'], with_benefits)
+#         # # Обнуляем стоимость для электромобилей
+#         # total_uah = 0
+#         # cost_uah = 0
+#         # additional_uah = 0
+#         if with_benefits:
+#             # Стара пільга: все 0 крім акцизу
+#             vat = 0.0
+#             total_customs = excise_uah  # тільки акциз
+#         else:
+#             # 2026: ПДВ від (вартість + додаткові + акциз)
+#             vat_base = total_uah + excise_uah
+#             vat = vat_base * 0.20
+#             total_customs = excise_uah + vat  # мито 0
+#
+#     elif vehicle_type == "truck_petrol":
+#         result = calculate_truck(total_uah, data['engine_volume'], data['year'])
+#     elif vehicle_type == "truck_diesel":
+#         result = calculate_diesel_truck(total_uah, data['engine_volume'], data['year'])
+#     elif vehicle_type == "truck_electric":
+#         result = calculate_electric_truck(total_uah)
+#         duty = result['duty']
+#         excise_uah = result['excise_eur'] * eur_rate
+#         vat = (total_uah + duty + excise_uah) * 0.20  # ПДВ стандартне
+#         total_customs = duty + excise_uah + vat
+#         pension = 0.0  # Вантажівки не платять
+#     elif vehicle_type == "moto_petrol":
+#         result = calculate_motorcycle(total_uah, data['engine_volume'])
+#     elif vehicle_type == "moto_electric":
+#         result = calculate_electric_motorcycle(total_uah)
+#
+#     # Conversion of excise tax into hryvnia
+#     # excise_uah = result['excise_eur'] * eur_rate
+#     # duty = result['duty']
+#
+#     # VAT calculation
+#     if vehicle_type == "car_electric_benefits":
+#         vat = 0
+#     else:
+#         vat = (total_uah + duty + excise_uah) * 0.20
+#
+#     # Pension Fund (electric cars DO NOT pay!)
+#     # pension = calculate_pension_fund(total_uah, is_electric)
+#     if vehicle_type.startswith("truck_"):  # Всі вантажівки - 0
+#         pension = 0.0
+#     else:
+#         pension = calculate_pension_fund(total_uah, is_electric)
+#
+#     # Total customs duties (WITHOUT pension fund)
+#     total_customs = duty + excise_uah + vat
+#
+#     # Total (with pension fund)
+#     total_payments = total_customs + pension
+#
+#     # We get the year and calculate the coefficient for display
+#     year_info = ""
+#     if 'year' in data:
+#         age_coef = calculate_age_coefficient(data['year'])
+#         current_year = datetime.now().year
+#         age = current_year - data['year']
+#         year_info = f"📅 Рік випуску: {data['year']} (вік: {age} лет)\n"
+#         year_info += f"📊 Коефіцієнт віку: {age_coef}\n"
+#
+#     # Battery information for electric vehicles
+#     battery_info = ""
+#     if 'battery_kwh' in data:
+#         battery_info = f"🔋 Місткість батареї: {data['battery_kwh']} кВт·год\n"
+#
+#     # Convert the total to the cost currency for comparison
+#     if currency == "USD":
+#         total_in_currency = total_customs / usd_rate
+#         currency_symbol = "$"
+#     elif currency == "EUR":
+#         total_in_currency = total_customs / eur_rate
+#         currency_symbol = "€"
+#     else:
+#         total_in_currency = total_customs
+#         currency_symbol = "грн"
+#
+#     # Forming a response
+#     response = f"📊 <b>Результат розрахунку</b>\n\n"
+#     response += f"💰 Вартість: {cost} {currency} = {cost_uah:.2f} грн\n"
+#     if additional > 0:
+#         response += f"➕ Дод. витрати: {additional} {additional_currency} = {additional_uah:.2f} грн\n"
+#     response += f"💵 Загальна вартість: {total_uah:.2f} грн\n\n"
+#
+#     # # Для электромобилей не показываем стоимость
+#     # if not vehicle_type.startswith("car_electric"):
+#     #     response += f"💰 Вартість: {cost} {currency} = {cost_uah:.2f} грн\n"
+#     #     if additional > 0:
+#     #         response += f"➕ Дод. витрати: {additional} {additional_currency} = {additional_uah:.2f} грн\n"
+#     #     response += f"💵 Загальна вартість: {total_uah:.2f} грн\n\n"
+#
+#     if year_info:
+#         response += year_info + "\n"
+#
+#     if battery_info:
+#         response += battery_info + "\n"
+#
+#     response += f"<b>Митні платежі:</b>\n"
+#
+#     # We show the correct duty rate
+#     # if vehicle_type == "truck":
+#     #     response += f"• Мито (5%): {duty:.2f} грн\n"
+#     if vehicle_type == "truck_petrol":
+#         response += f"• Мито (5%): {duty:.2f} грн\n"
+#     elif vehicle_type == "truck_diesel" or vehicle_type == "truck_electric":
+#         response += f"• Мито (10%): {duty:.2f} грн\n"
+#     elif vehicle_type.startswith("car_electric") or vehicle_type == "moto_electric":
+#         if vehicle_type == "car_electric_benefits":
+#             response += f"• Мито (0% - пільга): {duty:.2f} грн\n"
+#         else:
+#             response += f"• Мито (0%): {duty:.2f} грн\n"
+#     else:
+#         response += f"• Мито (10%): {duty:.2f} грн\n"
+#
+#     response += f"• Акциз: {result.get('excise_eur',0):.2f} EUR = {excise_uah:.2f} грн\n"
+#
+#     if vehicle_type == "car_electric_benefits":
+#         response += f"• ПДВ (0% - пільга): {vat:.2f} грн\n"
+#     else:
+#         response += f"• ПДВ (20%): {vat:.2f} грн\n"
+#
+#     # response += f"\n💵 <b>РАЗОМ митниця: {total_customs:.2f} грн ({total_in_currency:.2f} {currency})</b>\n"
+#     if vehicle_type.startswith("car_electric"):
+#         response += f"\n💵 <b>РАЗОМ митниця: {total_customs:.2f} грн ({total_in_currency:.2f} {currency})</b>\n"
+#     else:
+#         response += f"\n💵 <b>РАЗОМ митниця: {total_customs:.2f} грн ({total_in_currency:.2f} {currency})</b>\n"
+#
+#     # Пенсионный фонд
+#     if is_electric:
+#         response += f"\n• Пенсійний фонд: 0.00 грн (електромобілі не сплачують ✅)\n"
+#     else:
+#         # Определяем процент
+#         if total_uah < 499620:
+#             pension_percent = "3%"
+#         elif total_uah < 878120:
+#             pension_percent = "4%"
+#         else:
+#             pension_percent = "5%"
+#         response += f"\n• Пенсійний фонд ({pension_percent}): {pension:.2f} грн\n"
+#
+#     response += f"\n💰 <b>ВСЬОГО з пенсійним: {total_payments:.2f} грн</b>\n"
+#     response += f"\n📅 Курс НБУ на {date.strftime('%d.%m.%Y')}:\n"
+#     response += f"USD: {usd_rate:.2f} грн | EUR: {eur_rate:.2f} грн"
+#
+#     await message.answer(response, parse_mode="HTML", reply_markup=get_main_menu())
+#
+#     # Saving to the database and memory
+#     calc_data = {
+#         'user_id': message.from_user.id,
+#         'username': message.from_user.username or '',
+#         'vehicle_type': vehicle_type,
+#         'cost': cost,
+#         'currency': currency,
+#         'additional': additional,
+#         'total_uah': total_uah,
+#         'duty': duty,
+#         'excise': excise_uah,
+#         'vat': vat,
+#         'pension': pension,
+#         'total_payments': total_payments,
+#         'date': datetime.now().strftime('%d.%m.%Y %H:%M')
+#     }
+#
+#     # Saving to local memory
+#     calculations_db.append(calc_data)
+#
+#     # Saving to SQLite
+#     try:
+#         with get_db() as conn:
+#             cursor = conn.cursor()
+#             cursor.execute('''
+#                            INSERT INTO calculations
+#                            (user_id, username, vehicle_type, cost, currency, additional,
+#                             total_uah, duty, excise, vat, pension, total_payments)
+#                            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+#                            ''', (
+#                                calc_data['user_id'],
+#                                calc_data['username'],
+#                                calc_data['vehicle_type'],
+#                                calc_data['cost'],
+#                                calc_data['currency'],
+#                                calc_data['additional'],
+#                                calc_data['total_uah'],
+#                                calc_data['duty'],
+#                                calc_data['excise'],
+#                                calc_data['vat'],
+#                                calc_data['pension'],
+#                                calc_data['total_payments']
+#                            ))
+#             conn.commit()
+#             logger.info(f"✅ Розрахунок збережено для користувача {calc_data['user_id']}")
+#     except Exception as e:
+#         logger.error(f"❌ Помилка збереження у БД: {e}")
+
+
 async def perform_calculation(message: types.Message, state: FSMContext, date: datetime):
     """Calculation of customs duties"""
     data = await state.get_data()
@@ -956,7 +1315,6 @@ async def perform_calculation(message: types.Message, state: FSMContext, date: d
     # Получение курсов валют
     usd_rate = await get_nbu_rate("USD", date)
     eur_rate = await get_nbu_rate("EUR", date)
-
     if not usd_rate or not eur_rate:
         await message.answer("❌ Помилка отримання курсу валют")
         return
@@ -964,71 +1322,94 @@ async def perform_calculation(message: types.Message, state: FSMContext, date: d
     # Converting the cost to hryvnia
     cost = data['cost']
     currency = data['currency']
-
     if currency == "USD":
         cost_rate = usd_rate
     elif currency == "EUR":
         cost_rate = eur_rate
     else:
         cost_rate = 1.0
-
     cost_uah = cost * cost_rate
 
     # Converting additional expenses
     additional = data.get('additional', 0)
     additional_currency = data.get('additional_currency', 'USD')
-
     if additional_currency == "USD":
         add_rate = usd_rate
     elif additional_currency == "EUR":
         add_rate = eur_rate
     else:
         add_rate = 1.0
-
     additional_uah = additional * add_rate
-    total_uah = cost_uah + additional_uah
 
+    total_uah = cost_uah + additional_uah
     vehicle_type = data['vehicle_type']
 
     # Let's check if it's an electric car
-    is_electric = vehicle_type.startswith("car_electric") or vehicle_type == "moto_electric"
+    is_electric = vehicle_type.startswith("car_electric") or vehicle_type == "moto_electric" or vehicle_type == "truck_electric"
 
     # Calculation depending on the type of vehicle
+    duty = 0.0
+    excise_uah = 0.0
+    vat = 0.0
+    pension = 0.0
+    total_customs = 0.0
+
     if vehicle_type == "car_petrol":
         result = calculate_petrol_car(total_uah, data['engine_volume'], data['year'])
+        duty = result['duty']
+        excise_uah = result['excise_eur'] * eur_rate
     elif vehicle_type == "car_diesel":
         result = calculate_diesel_car(total_uah, data['engine_volume'], data['year'])
+        duty = result['duty']
+        excise_uah = result['excise_eur'] * eur_rate
     elif vehicle_type.startswith("car_electric"):
-        with_benefits = "benefits" in vehicle_type
-        # result = calculate_electric_car(total_uah, data['battery_kwh'], with_benefits)
-        result = calculate_electric_car(0, data['battery_kwh'], with_benefits)
-        # Обнуляем стоимость для электромобилей
-        total_uah = 0
-        cost_uah = 0
-        additional_uah = 0
-    # elif vehicle_type == "truck":
-    #     result = calculate_truck(total_uah, data['engine_volume'], data['year'])
+        with_benefits = vehicle_type == "car_electric_benefits"  # Точна перевірка
+        result = calculate_electric_car(total_uah, data['battery_kwh'], with_benefits)
+        duty = result['duty']  # 0
+        excise_uah = result['excise_eur'] * eur_rate
+        if with_benefits:
+            vat = 0.0
+        else:
+            vat_base = total_uah + excise_uah
+            vat = vat_base * 0.20
+    elif vehicle_type == "car_hybrid_petrol":
+        result = calculate_hybrid_petrol(total_uah, data['engine_volume'], data['year'])
+        duty = result['duty']
+        excise_uah = result['excise_eur'] * eur_rate
+    elif vehicle_type == "car_hybrid_diesel":
+        result = calculate_hybrid_diesel(total_uah, data['engine_volume'], data['year'])
+        duty = result['duty']
+        excise_uah = result['excise_eur'] * eur_rate
     elif vehicle_type == "truck_petrol":
         result = calculate_truck(total_uah, data['engine_volume'], data['year'])
+        duty = result['duty']
+        excise_uah = result['excise_eur'] * eur_rate
     elif vehicle_type == "truck_diesel":
         result = calculate_diesel_truck(total_uah, data['engine_volume'], data['year'])
+        duty = result['duty']
+        excise_uah = result['excise_eur'] * eur_rate
+    elif vehicle_type == "truck_electric":
+        result = calculate_electric_truck(total_uah)
+        duty = result['duty']
+        excise_uah = result['excise_eur'] * eur_rate
     elif vehicle_type == "moto_petrol":
         result = calculate_motorcycle(total_uah, data['engine_volume'])
+        duty = result['duty']
+        excise_uah = result['excise_eur'] * eur_rate
     elif vehicle_type == "moto_electric":
         result = calculate_electric_motorcycle(total_uah)
-
-    # Conversion of excise tax into hryvnia
-    excise_uah = result['excise_eur'] * eur_rate
-    duty = result['duty']
+        duty = result['duty']
+        excise_uah = result['excise_eur'] * eur_rate
 
     # VAT calculation
-    if vehicle_type == "car_electric_benefits":
-        vat = 0
-    else:
+    if vehicle_type != "car_electric_benefits":
         vat = (total_uah + duty + excise_uah) * 0.20
 
-    # Pension Fund (electric cars DO NOT pay!)
-    pension = calculate_pension_fund(total_uah, is_electric)
+    # Pension Fund
+    if vehicle_type.startswith("truck_") or is_electric:
+        pension = 0.0
+    else:
+        pension = calculate_pension_fund(total_uah, is_electric)
 
     # Total customs duties (WITHOUT pension fund)
     total_customs = duty + excise_uah + vat
@@ -1062,33 +1443,25 @@ async def perform_calculation(message: types.Message, state: FSMContext, date: d
         currency_symbol = "грн"
 
     # Forming a response
-    response = f"📊 <b>Результат расчета</b>\n\n"
+    response = f"📊 <b>Результат розрахунку</b>\n\n"
     response += f"💰 Вартість: {cost} {currency} = {cost_uah:.2f} грн\n"
     if additional > 0:
         response += f"➕ Дод. витрати: {additional} {additional_currency} = {additional_uah:.2f} грн\n"
     response += f"💵 Загальна вартість: {total_uah:.2f} грн\n\n"
 
-    # Для электромобилей не показываем стоимость
-    if not vehicle_type.startswith("car_electric"):
-        response += f"💰 Вартість: {cost} {currency} = {cost_uah:.2f} грн\n"
-        if additional > 0:
-            response += f"➕ Дод. витрати: {additional} {additional_currency} = {additional_uah:.2f} грн\n"
-        response += f"💵 Загальна вартість: {total_uah:.2f} грн\n\n"
-
     if year_info:
         response += year_info + "\n"
-
     if battery_info:
         response += battery_info + "\n"
 
     response += f"<b>Митні платежі:</b>\n"
 
     # We show the correct duty rate
-    # if vehicle_type == "truck":
-    #     response += f"• Мито (5%): {duty:.2f} грн\n"
     if vehicle_type == "truck_petrol":
         response += f"• Мито (5%): {duty:.2f} грн\n"
     elif vehicle_type == "truck_diesel":
+        response += f"• Мито (10%): {duty:.2f} грн\n"
+    elif vehicle_type == "truck_electric":
         response += f"• Мито (10%): {duty:.2f} грн\n"
     elif vehicle_type.startswith("car_electric") or vehicle_type == "moto_electric":
         if vehicle_type == "car_electric_benefits":
@@ -1098,20 +1471,16 @@ async def perform_calculation(message: types.Message, state: FSMContext, date: d
     else:
         response += f"• Мито (10%): {duty:.2f} грн\n"
 
-    response += f"• Акциз: {result['excise_eur']:.2f} EUR = {excise_uah:.2f} грн\n"
+    response += f"• Акциз: {result.get('excise_eur', 0):.2f} EUR = {excise_uah:.2f} грн\n"
 
     if vehicle_type == "car_electric_benefits":
         response += f"• ПДВ (0% - пільга): {vat:.2f} грн\n"
     else:
         response += f"• ПДВ (20%): {vat:.2f} грн\n"
 
-    # response += f"\n💵 <b>РАЗОМ митниця: {total_customs:.2f} грн ({total_in_currency:.2f} {currency})</b>\n"
-    if vehicle_type.startswith("car_electric"):
-        response += f"\n💵 <b>РАЗОМ митниця: {total_customs:.2f} грн</b>\n"
-    else:
-        response += f"\n💵 <b>РАЗОМ митниця: {total_customs:.2f} грн ({total_in_currency:.2f} {currency})</b>\n"
+    response += f"\n💵 <b>РАЗОМ митниця: {total_customs:.2f} грн ({total_in_currency:.2f} {currency_symbol})</b>\n"
 
-    # Пенсионный фонд
+    # Пенсійний фонд
     if is_electric:
         response += f"\n• Пенсійний фонд: 0.00 грн (електромобілі не сплачують ✅)\n"
     else:
