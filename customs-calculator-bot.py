@@ -40,7 +40,80 @@ def init_db():
     conn = sqlite3.connect('customs_bot.db')
     cursor = conn.cursor()
 
-    # Calculation table
+    # # Calculation table
+    # cursor.execute('''
+    #                CREATE TABLE IF NOT EXISTS calculations
+    #                (
+    #                    id
+    #                    INTEGER
+    #                    PRIMARY
+    #                    KEY
+    #                    AUTOINCREMENT,
+    #                    user_id
+    #                    INTEGER
+    #                    NOT
+    #                    NULL,
+    #                    username
+    #                    TEXT,
+    #                    vehicle_type
+    #                    TEXT
+    #                    NOT
+    #                    NULL,
+    #                    cost
+    #                    REAL
+    #                    NOT
+    #                    NULL,
+    #                    currency
+    #                    TEXT
+    #                    NOT
+    #                    NULL,
+    #                    additional
+    #                    REAL
+    #                    DEFAULT
+    #                    0,
+    #                    total_uah
+    #                    REAL
+    #                    NOT
+    #                    NULL,
+    #                    duty
+    #                    REAL
+    #                    NOT
+    #                    NULL,
+    #                    excise
+    #                    REAL
+    #                    NOT
+    #                    NULL,
+    #                    vat
+    #                    REAL
+    #                    NOT
+    #                    NULL,
+    #                    pension
+    #                    REAL
+    #                    NOT
+    #                    NULL,
+    #                    total_payments
+    #                    REAL
+    #                    NOT
+    #                    NULL,
+    #                    created_at
+    #                    TIMESTAMP
+    #                    DEFAULT
+    #                    CURRENT_TIMESTAMP
+    #                )
+    #                ''')
+    #
+    # # Indexes for quick searching
+    # cursor.execute('''
+    #                CREATE INDEX IF NOT EXISTS idx_user_id
+    #                    ON calculations(user_id)
+    #                ''')
+    #
+    # cursor.execute('''
+    #                CREATE INDEX IF NOT EXISTS idx_created_at
+    #                    ON calculations(created_at)
+    #                ''')
+
+    # Calculation table з новими колонками
     cursor.execute('''
                    CREATE TABLE IF NOT EXISTS calculations
                    (
@@ -98,19 +171,28 @@ def init_db():
                        created_at
                        TIMESTAMP
                        DEFAULT
-                       CURRENT_TIMESTAMP
+                       CURRENT_TIMESTAMP,
+                       year
+                       INTEGER,
+                       engine_volume
+                       REAL,
+                       battery_kwh
+                       REAL,
+                       usd_rate
+                       REAL,
+                       eur_rate
+                       REAL,
+                       total_customs
+                       REAL
                    )
                    ''')
 
     # Indexes for quick searching
     cursor.execute('''
-                   CREATE INDEX IF NOT EXISTS idx_user_id
-                       ON calculations(user_id)
+                   CREATE INDEX IF NOT EXISTS idx_user_id ON calculations(user_id)
                    ''')
-
     cursor.execute('''
-                   CREATE INDEX IF NOT EXISTS idx_created_at
-                       ON calculations(created_at)
+                   CREATE INDEX IF NOT EXISTS idx_created_at ON calculations(created_at)
                    ''')
 
     conn.commit()
@@ -533,39 +615,128 @@ async def contact_developer(message: types.Message):
 
 
 # "Payment History" handler
+# @dp.message(F.text == "📜 Історія розрахунків")
+# async def show_history(message: types.Message):
+#     """Show user payment history"""
+#     try:
+#         with get_db() as conn:
+#             cursor = conn.cursor()
+#             cursor.execute('''
+#                            SELECT vehicle_type, total_payments, created_at
+#                            FROM calculations
+#                            WHERE user_id = ?
+#                            ORDER BY created_at DESC LIMIT 10
+#                            ''', (message.from_user.id,))
+#
+#             user_calcs = cursor.fetchall()
+#     except:
+#         # If the database is unavailable, we use memory
+#         user_calcs = [c for c in calculations_db if c['user_id'] == message.from_user.id]
+#         user_calcs = user_calcs[-10:]
+#
+#     if not user_calcs:
+#         await message.answer("📜 Історія розрахунків порожня")
+#         return
+#
+#     history_text = "📜 <b>Ваші останні розрахунки:</b>\n\n"
+#     for calc in user_calcs:
+#         if isinstance(calc, sqlite3.Row):
+#             history_text += f"🚗 {calc['vehicle_type']}\n"
+#             history_text += f"💰 {calc['total_payments']:.2f} грн\n"
+#             history_text += f"📅 {calc['created_at']}\n\n"
+#         else:
+#             history_text += f"🚗 {calc['vehicle_type']}\n"
+#             history_text += f"💰 {calc['total_payments']:.2f} грн\n"
+#             history_text += f"📅 {calc['date']}\n\n"
+#
+#     await message.answer(history_text, parse_mode="HTML")
+
 @dp.message(F.text == "📜 Історія розрахунків")
 async def show_history(message: types.Message):
-    """Show user payment history"""
+    """Show user payment history (last 5 calculations)"""
+    user_id = message.from_user.id
+    user_calcs = []
+
+    # Спроба читати з БД (основний варіант)
     try:
         with get_db() as conn:
             cursor = conn.cursor()
             cursor.execute('''
-                           SELECT vehicle_type, total_payments, created_at
-                           FROM calculations
-                           WHERE user_id = ?
-                           ORDER BY created_at DESC LIMIT 10
-                           ''', (message.from_user.id,))
-
+                SELECT vehicle_type, total_payments, created_at, year, engine_volume, battery_kwh, 
+                       total_uah, total_customs, currency, usd_rate, eur_rate
+                FROM calculations 
+                WHERE user_id = ? 
+                ORDER BY created_at DESC 
+                LIMIT 5
+            ''', (user_id,))
             user_calcs = cursor.fetchall()
-    except:
-        # If the database is unavailable, we use memory
-        user_calcs = [c for c in calculations_db if c['user_id'] == message.from_user.id]
-        user_calcs = user_calcs[-10:]
+    except Exception as e:
+        logger.error(f"Помилка читання історії з БД для {user_id}: {e}")
+
+    # Якщо з БД не вийшло — читаємо з пам'яті
+    if not user_calcs:
+        memory_calcs = [c for c in calculations_db if c.get('user_id') == user_id]
+        memory_calcs = sorted(memory_calcs, key=lambda x: x.get('date', ''), reverse=True)[:5]
+        user_calcs = memory_calcs  # Тепер це список словників
 
     if not user_calcs:
         await message.answer("📜 Історія розрахунків порожня")
         return
 
-    history_text = "📜 <b>Ваші останні розрахунки:</b>\n\n"
+    history_text = "📜 <b>Ваші останні розрахунки (до 5):</b>\n\n"
+
     for calc in user_calcs:
+        # Обробка даних залежно від джерела (Row або dict)
         if isinstance(calc, sqlite3.Row):
-            history_text += f"🚗 {calc['vehicle_type']}\n"
-            history_text += f"💰 {calc['total_payments']:.2f} грн\n"
-            history_text += f"📅 {calc['created_at']}\n\n"
+            vehicle_type = calc['vehicle_type']
+            year = calc['year']
+            engine_volume = calc['engine_volume']
+            battery_kwh = calc['battery_kwh']
+            total_uah = calc['total_uah'] or 0
+            total_customs = calc['total_customs'] or 0
+            currency = calc['currency']
+            usd_rate = calc['usd_rate'] or 0
+            eur_rate = calc['eur_rate'] or 0
+            date_str = str(calc['created_at'])[:19].replace('T', ' ')
+        else:  # з пам'яті
+            vehicle_type = calc.get('vehicle_type', 'N/A')
+            year = calc.get('year')
+            engine_volume = calc.get('engine_volume')
+            battery_kwh = calc.get('battery_kwh')
+            total_uah = calc.get('total_uah', 0)
+            total_customs = calc.get('total_customs', 0)
+            currency = calc.get('currency', 'UAH')
+            usd_rate = calc.get('usd_rate', 0)
+            eur_rate = calc.get('eur_rate', 0)
+            date_str = calc.get('date', 'N/A')
+
+        # Специфікація (об'єм або батарея)
+        spec = ""
+        if engine_volume is not None and engine_volume > 0:
+            spec = f"{engine_volume} см³"
+        elif battery_kwh is not None and battery_kwh > 0:
+            spec = f"{battery_kwh} кВт·год"
         else:
-            history_text += f"🚗 {calc['vehicle_type']}\n"
-            history_text += f"💰 {calc['total_payments']:.2f} грн\n"
-            history_text += f"📅 {calc['date']}\n\n"
+            spec = "—"
+
+        # Конвертація митниці назад у валюту
+        if currency == "USD" and usd_rate > 0:
+            customs_in_currency = total_customs / usd_rate
+            curr_symbol = "USD"
+        elif currency == "EUR" and eur_rate > 0:
+            customs_in_currency = total_customs / eur_rate
+            curr_symbol = "EUR"
+        else:
+            customs_in_currency = total_customs
+            curr_symbol = "грн"
+
+        history_text += f"🚗 <b>{vehicle_type}</b>\n"
+        if year:
+            history_text += f"📅 Рік: {year}\n"
+        history_text += f"🔧 {spec}\n"
+        history_text += f"💰 Вартість = {total_uah:.2f} грн\n"
+        history_text += f"💵 РАЗОМ митниця: {total_customs:.2f} грн ({customs_in_currency:.2f} {curr_symbol})\n"
+        history_text += f"📅 {date_str}\n\n"
 
     await message.answer(history_text, parse_mode="HTML")
 
@@ -1513,6 +1684,12 @@ async def perform_calculation(message: types.Message, state: FSMContext, date: d
         'vat': vat,
         'pension': pension,
         'total_payments': total_payments,
+        'year': data.get('year'),
+        'engine_volume': data.get('engine_volume'),
+        'battery_kwh': data.get('battery_kwh'),
+        'usd_rate': usd_rate,
+        'eur_rate': eur_rate,
+        'total_customs': total_customs,
         'date': datetime.now().strftime('%d.%m.%Y %H:%M')
     }
 
@@ -1526,8 +1703,9 @@ async def perform_calculation(message: types.Message, state: FSMContext, date: d
             cursor.execute('''
                            INSERT INTO calculations
                            (user_id, username, vehicle_type, cost, currency, additional,
-                            total_uah, duty, excise, vat, pension, total_payments)
-                           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                            total_uah, duty, excise, vat, pension, total_payments,
+                            year, engine_volume, battery_kwh, usd_rate, eur_rate, total_customs)
+                           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                            ''', (
                                calc_data['user_id'],
                                calc_data['username'],
@@ -1540,7 +1718,9 @@ async def perform_calculation(message: types.Message, state: FSMContext, date: d
                                calc_data['excise'],
                                calc_data['vat'],
                                calc_data['pension'],
-                               calc_data['total_payments']
+                               calc_data['total_payments'],
+                               calc_data['year'], calc_data['engine_volume'], calc_data['battery_kwh'],
+                               calc_data['usd_rate'], calc_data['eur_rate'], calc_data['total_customs']
                            ))
             conn.commit()
             logger.info(f"✅ Розрахунок збережено для користувача {calc_data['user_id']}")
