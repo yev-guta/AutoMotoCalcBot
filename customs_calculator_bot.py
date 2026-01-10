@@ -1825,7 +1825,7 @@ async def main():
         logger.info("The bot will only work with memory")
 
     logger.info("🚀 The bot has been launched!")
-    await dp.start_polling(bot)
+    #await dp.start_polling(bot)
 
 
 # if __name__ == '__main__':

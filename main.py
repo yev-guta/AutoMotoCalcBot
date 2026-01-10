@@ -1,8 +1,8 @@
 import os
 import asyncio
 from fastapi import FastAPI, Request
-from aiogram import Bot, Dispatcher
-from customs_calculator_bot import dp, bot  # твой файл
+from aiogram.types import Update
+from customs_calculator_bot import dp, bot
 
 app = FastAPI()
 
@@ -10,18 +10,18 @@ app = FastAPI()
 async def health_check():
     return {"status": "ok"}
 
-# Webhook endpoint
 @app.post("/webhook")
 async def telegram_webhook(request: Request):
     data = await request.json()
-    await dp.feed_update(bot, data)
+    update = Update.model_validate(data)  # ← преобразуем dict → Update
+    await dp.feed_update(bot, update)
     return {"ok": True}
 
 @app.on_event("startup")
 async def on_startup():
-    # Устанавливаем webhook при старте
     webhook_url = f"https://{os.getenv('KOYEB_APP_URL')}/webhook"
     await bot.set_webhook(webhook_url)
+
 
 
 # import asyncio
