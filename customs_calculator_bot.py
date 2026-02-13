@@ -11,8 +11,11 @@ from aiogram.fsm.storage.memory import MemoryStorage
 from aiogram.types import ReplyKeyboardMarkup, KeyboardButton, InlineKeyboardMarkup, InlineKeyboardButton
 from dotenv import load_dotenv
 import asyncio
-import sqlite3
-from contextlib import contextmanager
+# import sqlite3
+# from contextlib import contextmanager
+
+import asyncpg
+from db import get_pool
 
 # Loading environment variables
 load_dotenv()
@@ -35,179 +38,33 @@ calculations_db = []
 
 
 # Initializing the database
-def init_db():
-    """Creating database tables"""
-    conn = sqlite3.connect('customs_bot.db')
-    cursor = conn.cursor()
-
-    # # Calculation table
-    # cursor.execute('''
-    #                CREATE TABLE IF NOT EXISTS calculations
-    #                (
-    #                    id
-    #                    INTEGER
-    #                    PRIMARY
-    #                    KEY
-    #                    AUTOINCREMENT,
-    #                    user_id
-    #                    INTEGER
-    #                    NOT
-    #                    NULL,
-    #                    username
-    #                    TEXT,
-    #                    vehicle_type
-    #                    TEXT
-    #                    NOT
-    #                    NULL,
-    #                    cost
-    #                    REAL
-    #                    NOT
-    #                    NULL,
-    #                    currency
-    #                    TEXT
-    #                    NOT
-    #                    NULL,
-    #                    additional
-    #                    REAL
-    #                    DEFAULT
-    #                    0,
-    #                    total_uah
-    #                    REAL
-    #                    NOT
-    #                    NULL,
-    #                    duty
-    #                    REAL
-    #                    NOT
-    #                    NULL,
-    #                    excise
-    #                    REAL
-    #                    NOT
-    #                    NULL,
-    #                    vat
-    #                    REAL
-    #                    NOT
-    #                    NULL,
-    #                    pension
-    #                    REAL
-    #                    NOT
-    #                    NULL,
-    #                    total_payments
-    #                    REAL
-    #                    NOT
-    #                    NULL,
-    #                    created_at
-    #                    TIMESTAMP
-    #                    DEFAULT
-    #                    CURRENT_TIMESTAMP
-    #                )
-    #                ''')
-    #
-    # # Indexes for quick searching
-    # cursor.execute('''
-    #                CREATE INDEX IF NOT EXISTS idx_user_id
-    #                    ON calculations(user_id)
-    #                ''')
-    #
-    # cursor.execute('''
-    #                CREATE INDEX IF NOT EXISTS idx_created_at
-    #                    ON calculations(created_at)
-    #                ''')
-
-    # Calculation table з новими колонками
-    cursor.execute('''
-                   CREATE TABLE IF NOT EXISTS calculations
-                   (
-                       id
-                       INTEGER
-                       PRIMARY
-                       KEY
-                       AUTOINCREMENT,
-                       user_id
-                       INTEGER
-                       NOT
-                       NULL,
-                       username
-                       TEXT,
-                       vehicle_type
-                       TEXT
-                       NOT
-                       NULL,
-                       cost
-                       REAL
-                       NOT
-                       NULL,
-                       currency
-                       TEXT
-                       NOT
-                       NULL,
-                       additional
-                       REAL
-                       DEFAULT
-                       0,
-                       total_uah
-                       REAL
-                       NOT
-                       NULL,
-                       duty
-                       REAL
-                       NOT
-                       NULL,
-                       excise
-                       REAL
-                       NOT
-                       NULL,
-                       vat
-                       REAL
-                       NOT
-                       NULL,
-                       pension
-                       REAL
-                       NOT
-                       NULL,
-                       total_payments
-                       REAL
-                       NOT
-                       NULL,
-                       created_at
-                       TIMESTAMP
-                       DEFAULT
-                       CURRENT_TIMESTAMP,
-                       year
-                       INTEGER,
-                       engine_volume
-                       REAL,
-                       battery_kwh
-                       REAL,
-                       usd_rate
-                       REAL,
-                       eur_rate
-                       REAL,
-                       total_customs
-                       REAL
-                   )
-                   ''')
-
-    # Indexes for quick searching
-    cursor.execute('''
-                   CREATE INDEX IF NOT EXISTS idx_user_id ON calculations(user_id)
-                   ''')
-    cursor.execute('''
-                   CREATE INDEX IF NOT EXISTS idx_created_at ON calculations(created_at)
-                   ''')
-
-    conn.commit()
-    conn.close()
-
-
-@contextmanager
-def get_db():
-    """Context manager for working with databases"""
-    conn = sqlite3.connect('customs_bot.db')
-    conn.row_factory = sqlite3.Row
-    try:
-        yield conn
-    finally:
-        conn.close()
+async def init_db():
+    pool = await get_pool()
+    async with pool.acquire() as conn:
+        await conn.execute("""
+            CREATE TABLE IF NOT EXISTS calculations (
+                id SERIAL PRIMARY KEY,
+                user_id BIGINT NOT NULL,
+                username TEXT,
+                vehicle_type TEXT NOT NULL,
+                cost REAL NOT NULL,
+                currency TEXT NOT NULL,
+                additional REAL DEFAULT 0,
+                total_uah REAL NOT NULL,
+                duty REAL NOT NULL,
+                excise REAL NOT NULL,
+                vat REAL NOT NULL,
+                pension REAL NOT NULL,
+                total_payments REAL NOT NULL,
+                created_at TIMESTAMP DEFAULT NOW(),
+                year INTEGER,
+                engine_volume REAL,
+                battery_kwh REAL,
+                usd_rate REAL,
+                eur_rate REAL,
+                total_customs REAL
+            );
+        """)
 
 
 # FSM states
@@ -613,113 +470,70 @@ async def contact_developer(message: types.Message):
         f"💬 Зв'язатися з розробником: @EvGT_7"
     )
 
-
-# "Payment History" handler
-# @dp.message(F.text == "📜 Історія розрахунків")
-# async def show_history(message: types.Message):
-#     """Show user payment history"""
-#     try:
-#         with get_db() as conn:
-#             cursor = conn.cursor()
-#             cursor.execute('''
-#                            SELECT vehicle_type, total_payments, created_at
-#                            FROM calculations
-#                            WHERE user_id = ?
-#                            ORDER BY created_at DESC LIMIT 10
-#                            ''', (message.from_user.id,))
-#
-#             user_calcs = cursor.fetchall()
-#     except:
-#         # If the database is unavailable, we use memory
-#         user_calcs = [c for c in calculations_db if c['user_id'] == message.from_user.id]
-#         user_calcs = user_calcs[-10:]
-#
-#     if not user_calcs:
-#         await message.answer("📜 Історія розрахунків порожня")
-#         return
-#
-#     history_text = "📜 <b>Ваші останні розрахунки:</b>\n\n"
-#     for calc in user_calcs:
-#         if isinstance(calc, sqlite3.Row):
-#             history_text += f"🚗 {calc['vehicle_type']}\n"
-#             history_text += f"💰 {calc['total_payments']:.2f} грн\n"
-#             history_text += f"📅 {calc['created_at']}\n\n"
-#         else:
-#             history_text += f"🚗 {calc['vehicle_type']}\n"
-#             history_text += f"💰 {calc['total_payments']:.2f} грн\n"
-#             history_text += f"📅 {calc['date']}\n\n"
-#
-#     await message.answer(history_text, parse_mode="HTML")
-
 @dp.message(F.text == "📜 Історія розрахунків")
 async def show_history(message: types.Message):
     """Show user payment history (last 5 calculations)"""
     user_id = message.from_user.id
-    user_calcs = []
 
-    # Спроба читати з БД (основний варіант)
     try:
-        with get_db() as conn:
-            cursor = conn.cursor()
-            cursor.execute('''
-                SELECT vehicle_type, total_payments, created_at, year, engine_volume, battery_kwh, 
+        pool = await get_pool()
+        async with pool.acquire() as conn:
+            rows = await conn.fetch("""
+                SELECT vehicle_type, total_payments, created_at, year, engine_volume, battery_kwh,
                        total_uah, total_customs, currency, usd_rate, eur_rate
-                FROM calculations 
-                WHERE user_id = ? 
-                ORDER BY created_at DESC 
+                FROM calculations
+                WHERE user_id = $1
+                ORDER BY created_at DESC
                 LIMIT 5
-            ''', (user_id,))
-            user_calcs = cursor.fetchall()
+            """, user_id)
     except Exception as e:
         logger.error(f"Помилка читання історії з БД для {user_id}: {e}")
+        rows = []
 
-    # Якщо з БД не вийшло — читаємо з пам'яті
-    if not user_calcs:
+    # fallback на память, если хочешь оставить
+    if not rows:
         memory_calcs = [c for c in calculations_db if c.get('user_id') == user_id]
         memory_calcs = sorted(memory_calcs, key=lambda x: x.get('date', ''), reverse=True)[:5]
-        user_calcs = memory_calcs  # Тепер це список словників
+        rows = memory_calcs
 
-    if not user_calcs:
+    if not rows:
         await message.answer("📜 Історія розрахунків порожня")
         return
 
     history_text = "📜 <b>Ваші останні розрахунки (до 5):</b>\n\n"
 
-    for calc in user_calcs:
-        # Обробка даних залежно від джерела (Row або dict)
-        if isinstance(calc, sqlite3.Row):
-            vehicle_type = calc['vehicle_type']
-            year = calc['year']
-            engine_volume = calc['engine_volume']
-            battery_kwh = calc['battery_kwh']
-            total_uah = calc['total_uah'] or 0
-            total_customs = calc['total_customs'] or 0
-            currency = calc['currency']
-            usd_rate = calc['usd_rate'] or 0
-            eur_rate = calc['eur_rate'] or 0
-            date_str = str(calc['created_at'])[:19].replace('T', ' ')
-        else:  # з пам'яті
-            vehicle_type = calc.get('vehicle_type', 'N/A')
-            year = calc.get('year')
-            engine_volume = calc.get('engine_volume')
-            battery_kwh = calc.get('battery_kwh')
-            total_uah = calc.get('total_uah', 0)
-            total_customs = calc.get('total_customs', 0)
-            currency = calc.get('currency', 'UAH')
-            usd_rate = calc.get('usd_rate', 0)
-            eur_rate = calc.get('eur_rate', 0)
-            date_str = calc.get('date', 'N/A')
+    for calc in rows:
+        # asyncpg.Record
+        if not isinstance(calc, dict):
+            vehicle_type = calc["vehicle_type"]
+            year = calc["year"]
+            engine_volume = calc["engine_volume"]
+            battery_kwh = calc["battery_kwh"]
+            total_uah = calc["total_uah"] or 0
+            total_customs = calc["total_customs"] or 0
+            currency = calc["currency"]
+            usd_rate = calc["usd_rate"] or 0
+            eur_rate = calc["eur_rate"] or 0
+            date_str = str(calc["created_at"])[:19]
+        else:  # из памяти
+            vehicle_type = calc.get("vehicle_type", "N/A")
+            year = calc.get("year")
+            engine_volume = calc.get("engine_volume")
+            battery_kwh = calc.get("battery_kwh")
+            total_uah = calc.get("total_uah", 0)
+            total_customs = calc.get("total_customs", 0)
+            currency = calc.get("currency", "UAH")
+            usd_rate = calc.get("usd_rate", 0)
+            eur_rate = calc.get("eur_rate", 0)
+            date_str = calc.get("date", "N/A")
 
-        # Специфікація (об'єм або батарея)
-        spec = ""
-        if engine_volume is not None and engine_volume > 0:
+        if engine_volume:
             spec = f"{engine_volume} см³"
-        elif battery_kwh is not None and battery_kwh > 0:
+        elif battery_kwh:
             spec = f"{battery_kwh} кВт·год"
         else:
             spec = "—"
 
-        # Конвертація митниці назад у валюту
         if currency == "USD" and usd_rate > 0:
             customs_in_currency = total_customs / usd_rate
             curr_symbol = "USD"
@@ -730,15 +544,17 @@ async def show_history(message: types.Message):
             customs_in_currency = total_customs
             curr_symbol = "грн"
 
-        history_text += f"🚗 <b>{vehicle_type}</b>\n"
-        if year:
-            history_text += f"📅 Рік: {year}\n"
-        history_text += f"🔧 {spec}\n"
-        history_text += f"💰 Вартість = {total_uah:.2f} грн\n"
-        history_text += f"💵 РАЗОМ митниця: {total_customs:.2f} грн ({customs_in_currency:.2f} {curr_symbol})\n"
-        history_text += f"📅 {date_str}\n\n"
+        history_text += (
+            f"🚗 <b>{vehicle_type}</b>\n"
+            + (f"📅 Рік: {year}\n" if year else "")
+            + f"🔧 {spec}\n"
+            f"💰 Вартість = {total_uah:.2f} грн\n"
+            f"💵 РАЗОМ митниця: {total_customs:.2f} грн ({customs_in_currency:.2f} {curr_symbol})\n"
+            f"📅 {date_str}\n\n"
+        )
 
     await message.answer(history_text, parse_mode="HTML")
+
 
 
 # Statistics Handler (for developer only)
@@ -750,53 +566,43 @@ async def show_stats(message: types.Message):
         return
 
     try:
-        with get_db() as conn:
-            cursor = conn.cursor()
-
-            # Total number of calculations
-            cursor.execute('SELECT COUNT(*) as total FROM calculations')
-            total_calcs = cursor.fetchone()['total']
-
-            # Unique users
-            cursor.execute('SELECT COUNT(DISTINCT user_id) as unique_users FROM calculations')
-            unique_users = cursor.fetchone()['unique_users']
-
-            # Calculations for the last 24 hours
-            cursor.execute('''
-                           SELECT COUNT(*) as today
-                           FROM calculations
-                           WHERE created_at >= datetime('now', '-1 day')
-                           ''')
-            today_calcs = cursor.fetchone()['today']
-
-            # Popular vehicle types
-            cursor.execute('''
-                           SELECT vehicle_type, COUNT(*) as count
-                           FROM calculations
-                           GROUP BY vehicle_type
-                           ORDER BY count DESC
-                               LIMIT 5
-                           ''')
-            popular_vehicles = cursor.fetchall()
-
-        stats_text = f"📊 <b>Статистика робота</b>\n\n"
-        stats_text += f"👥 Унікальних користувачів: {unique_users}\n"
-        stats_text += f"🧮 Усього розрахунків: {total_calcs}\n"
-        stats_text += f"📅 За останні 24ч: {today_calcs}\n\n"
-        stats_text += f"<b>Популярні типи ТЗ:</b>\n"
-
-        for vehicle in popular_vehicles:
-            stats_text += f"• {vehicle['vehicle_type']}: {vehicle['count']}\n"
-    except:
-        # Если БД недоступна, используем память
+        pool = await get_pool()
+        async with pool.acquire() as conn:
+            total_calcs = await conn.fetchval("SELECT COUNT(*) FROM calculations")
+            unique_users = await conn.fetchval("SELECT COUNT(DISTINCT user_id) FROM calculations")
+            today_calcs = await conn.fetchval("""
+                SELECT COUNT(*) 
+                FROM calculations
+                WHERE created_at >= NOW() - INTERVAL '1 day'
+            """)
+            popular_vehicles = await conn.fetch("""
+                SELECT vehicle_type, COUNT(*) AS count
+                FROM calculations
+                GROUP BY vehicle_type
+                ORDER BY count DESC
+                LIMIT 5
+            """)
+        stats_text = (
+            "📊 <b>Статистика робота</b>\n\n"
+            f"👥 Унікальних користувачів: {unique_users}\n"
+            f"🧮 Усього розрахунків: {total_calcs}\n"
+            f"📅 За останні 24ч: {today_calcs}\n\n"
+            "<b>Популярні типи ТЗ:</b>\n"
+        )
+        for v in popular_vehicles:
+            stats_text += f"• {v['vehicle_type']}: {v['count']}\n"
+    except Exception as e:
+        logger.error(f"Помилка статистики: {e}")
         total_calcs = len(calculations_db)
-        unique_users = len(set(c['user_id'] for c in calculations_db))
-
-        stats_text = f"📊 <b>Статистика робота</b>\n\n"
-        stats_text += f"👥 Унікальних користувачів: {unique_users}\n"
-        stats_text += f"🧮 Усього розрахунків: {total_calcs}\n"
+        unique_users = len(set(c["user_id"] for c in calculations_db))
+        stats_text = (
+            "📊 <b>Статистика робота</b>\n\n"
+            f"👥 Унікальних користувачів: {unique_users}\n"
+            f"🧮 Усього розрахунків: {total_calcs}\n"
+        )
 
     await message.answer(stats_text, parse_mode="HTML")
+
 
 
 # Callback handler for vehicle types
@@ -1220,263 +1026,45 @@ async def show_rate_only(message: types.Message, date: datetime):
 
 
 # Calculation execution function
-# async def perform_calculation(message: types.Message, state: FSMContext, date: datetime):
-#     """Calculation of customs duties"""
-#     data = await state.get_data()
-#
-#     # Получение курсов валют
-#     usd_rate = await get_nbu_rate("USD", date)
-#     eur_rate = await get_nbu_rate("EUR", date)
-#
-#     if not usd_rate or not eur_rate:
-#         await message.answer("❌ Помилка отримання курсу валют")
-#         return
-#
-#     # Converting the cost to hryvnia
-#     cost = data['cost']
-#     currency = data['currency']
-#
-#     if currency == "USD":
-#         cost_rate = usd_rate
-#     elif currency == "EUR":
-#         cost_rate = eur_rate
-#     else:
-#         cost_rate = 1.0
-#
-#     cost_uah = cost * cost_rate
-#
-#     # Converting additional expenses
-#     additional = data.get('additional', 0)
-#     additional_currency = data.get('additional_currency', 'USD')
-#
-#     if additional_currency == "USD":
-#         add_rate = usd_rate
-#     elif additional_currency == "EUR":
-#         add_rate = eur_rate
-#     else:
-#         add_rate = 1.0
-#
-#     additional_uah = additional * add_rate
-#     total_uah = cost_uah + additional_uah
-#
-#     vehicle_type = data['vehicle_type']
-#
-#     # Let's check if it's an electric car
-#     is_electric = vehicle_type.startswith("car_electric") or vehicle_type == "moto_electric" or vehicle_type == "truck_electric"
-#
-#     # Calculation depending on the type of vehicle
-#     if vehicle_type == "car_petrol":
-#         result = calculate_petrol_car(total_uah, data['engine_volume'], data['year'])
-#     elif vehicle_type == "car_diesel":
-#         result = calculate_diesel_car(total_uah, data['engine_volume'], data['year'])
-#     elif vehicle_type == "car_hybrid_petrol":
-#         result = calculate_hybrid_petrol(total_uah, data['engine_volume'], data['year'])
-#     elif vehicle_type == "car_hybrid_diesel":
-#         result = calculate_hybrid_diesel(total_uah, data['engine_volume'], data['year'])
-#     elif vehicle_type.startswith("car_electric"):
-#         with_benefits = "benefits" in vehicle_type
-#         result = calculate_electric_car(total_uah, data['battery_kwh'], with_benefits)  # total_uah не використовується для акцизу
-#
-#         duty = result['duty']  # 0
-#         excise_eur = result['excise_eur']
-#         excise_uah = excise_eur * eur_rate
-#
-#         # # result = calculate_electric_car(total_uah, data['battery_kwh'], with_benefits) car_electric_no_benefits
-#         # result = calculate_electric_car(0, data['battery_kwh'], with_benefits)
-#         # # Обнуляем стоимость для электромобилей
-#         # total_uah = 0
-#         # cost_uah = 0
-#         # additional_uah = 0
-#         if with_benefits:
-#             # Стара пільга: все 0 крім акцизу
-#             vat = 0.0
-#             total_customs = excise_uah  # тільки акциз
-#         else:
-#             # 2026: ПДВ від (вартість + додаткові + акциз)
-#             vat_base = total_uah + excise_uah
-#             vat = vat_base * 0.20
-#             total_customs = excise_uah + vat  # мито 0
-#
-#     elif vehicle_type == "truck_petrol":
-#         result = calculate_truck(total_uah, data['engine_volume'], data['year'])
-#     elif vehicle_type == "truck_diesel":
-#         result = calculate_diesel_truck(total_uah, data['engine_volume'], data['year'])
-#     elif vehicle_type == "truck_electric":
-#         result = calculate_electric_truck(total_uah)
-#         duty = result['duty']
-#         excise_uah = result['excise_eur'] * eur_rate
-#         vat = (total_uah + duty + excise_uah) * 0.20  # ПДВ стандартне
-#         total_customs = duty + excise_uah + vat
-#         pension = 0.0  # Вантажівки не платять
-#     elif vehicle_type == "moto_petrol":
-#         result = calculate_motorcycle(total_uah, data['engine_volume'])
-#     elif vehicle_type == "moto_electric":
-#         result = calculate_electric_motorcycle(total_uah)
-#
-#     # Conversion of excise tax into hryvnia
-#     # excise_uah = result['excise_eur'] * eur_rate
-#     # duty = result['duty']
-#
-#     # VAT calculation
-#     if vehicle_type == "car_electric_benefits":
-#         vat = 0
-#     else:
-#         vat = (total_uah + duty + excise_uah) * 0.20
-#
-#     # Pension Fund (electric cars DO NOT pay!)
-#     # pension = calculate_pension_fund(total_uah, is_electric)
-#     if vehicle_type.startswith("truck_"):  # Всі вантажівки - 0
-#         pension = 0.0
-#     else:
-#         pension = calculate_pension_fund(total_uah, is_electric)
-#
-#     # Total customs duties (WITHOUT pension fund)
-#     total_customs = duty + excise_uah + vat
-#
-#     # Total (with pension fund)
-#     total_payments = total_customs + pension
-#
-#     # We get the year and calculate the coefficient for display
-#     year_info = ""
-#     if 'year' in data:
-#         age_coef = calculate_age_coefficient(data['year'])
-#         current_year = datetime.now().year
-#         age = current_year - data['year']
-#         year_info = f"📅 Рік випуску: {data['year']} (вік: {age} лет)\n"
-#         year_info += f"📊 Коефіцієнт віку: {age_coef}\n"
-#
-#     # Battery information for electric vehicles
-#     battery_info = ""
-#     if 'battery_kwh' in data:
-#         battery_info = f"🔋 Місткість батареї: {data['battery_kwh']} кВт·год\n"
-#
-#     # Convert the total to the cost currency for comparison
-#     if currency == "USD":
-#         total_in_currency = total_customs / usd_rate
-#         currency_symbol = "$"
-#     elif currency == "EUR":
-#         total_in_currency = total_customs / eur_rate
-#         currency_symbol = "€"
-#     else:
-#         total_in_currency = total_customs
-#         currency_symbol = "грн"
-#
-#     # Forming a response
-#     response = f"📊 <b>Результат розрахунку</b>\n\n"
-#     response += f"💰 Вартість: {cost} {currency} = {cost_uah:.2f} грн\n"
-#     if additional > 0:
-#         response += f"➕ Дод. витрати: {additional} {additional_currency} = {additional_uah:.2f} грн\n"
-#     response += f"💵 Загальна вартість: {total_uah:.2f} грн\n\n"
-#
-#     # # Для электромобилей не показываем стоимость
-#     # if not vehicle_type.startswith("car_electric"):
-#     #     response += f"💰 Вартість: {cost} {currency} = {cost_uah:.2f} грн\n"
-#     #     if additional > 0:
-#     #         response += f"➕ Дод. витрати: {additional} {additional_currency} = {additional_uah:.2f} грн\n"
-#     #     response += f"💵 Загальна вартість: {total_uah:.2f} грн\n\n"
-#
-#     if year_info:
-#         response += year_info + "\n"
-#
-#     if battery_info:
-#         response += battery_info + "\n"
-#
-#     response += f"<b>Митні платежі:</b>\n"
-#
-#     # We show the correct duty rate
-#     # if vehicle_type == "truck":
-#     #     response += f"• Мито (5%): {duty:.2f} грн\n"
-#     if vehicle_type == "truck_petrol":
-#         response += f"• Мито (5%): {duty:.2f} грн\n"
-#     elif vehicle_type == "truck_diesel" or vehicle_type == "truck_electric":
-#         response += f"• Мито (10%): {duty:.2f} грн\n"
-#     elif vehicle_type.startswith("car_electric") or vehicle_type == "moto_electric":
-#         if vehicle_type == "car_electric_benefits":
-#             response += f"• Мито (0% - пільга): {duty:.2f} грн\n"
-#         else:
-#             response += f"• Мито (0%): {duty:.2f} грн\n"
-#     else:
-#         response += f"• Мито (10%): {duty:.2f} грн\n"
-#
-#     response += f"• Акциз: {result.get('excise_eur',0):.2f} EUR = {excise_uah:.2f} грн\n"
-#
-#     if vehicle_type == "car_electric_benefits":
-#         response += f"• ПДВ (0% - пільга): {vat:.2f} грн\n"
-#     else:
-#         response += f"• ПДВ (20%): {vat:.2f} грн\n"
-#
-#     # response += f"\n💵 <b>РАЗОМ митниця: {total_customs:.2f} грн ({total_in_currency:.2f} {currency})</b>\n"
-#     if vehicle_type.startswith("car_electric"):
-#         response += f"\n💵 <b>РАЗОМ митниця: {total_customs:.2f} грн ({total_in_currency:.2f} {currency})</b>\n"
-#     else:
-#         response += f"\n💵 <b>РАЗОМ митниця: {total_customs:.2f} грн ({total_in_currency:.2f} {currency})</b>\n"
-#
-#     # Пенсионный фонд
-#     if is_electric:
-#         response += f"\n• Пенсійний фонд: 0.00 грн (електромобілі не сплачують ✅)\n"
-#     else:
-#         # Определяем процент
-#         if total_uah < 499620:
-#             pension_percent = "3%"
-#         elif total_uah < 878120:
-#             pension_percent = "4%"
-#         else:
-#             pension_percent = "5%"
-#         response += f"\n• Пенсійний фонд ({pension_percent}): {pension:.2f} грн\n"
-#
-#     response += f"\n💰 <b>ВСЬОГО з пенсійним: {total_payments:.2f} грн</b>\n"
-#     response += f"\n📅 Курс НБУ на {date.strftime('%d.%m.%Y')}:\n"
-#     response += f"USD: {usd_rate:.2f} грн | EUR: {eur_rate:.2f} грн"
-#
-#     await message.answer(response, parse_mode="HTML", reply_markup=get_main_menu())
-#
-#     # Saving to the database and memory
-#     calc_data = {
-#         'user_id': message.from_user.id,
-#         'username': message.from_user.username or '',
-#         'vehicle_type': vehicle_type,
-#         'cost': cost,
-#         'currency': currency,
-#         'additional': additional,
-#         'total_uah': total_uah,
-#         'duty': duty,
-#         'excise': excise_uah,
-#         'vat': vat,
-#         'pension': pension,
-#         'total_payments': total_payments,
-#         'date': datetime.now().strftime('%d.%m.%Y %H:%M')
-#     }
-#
-#     # Saving to local memory
-#     calculations_db.append(calc_data)
-#
-#     # Saving to SQLite
-#     try:
-#         with get_db() as conn:
-#             cursor = conn.cursor()
-#             cursor.execute('''
-#                            INSERT INTO calculations
-#                            (user_id, username, vehicle_type, cost, currency, additional,
-#                             total_uah, duty, excise, vat, pension, total_payments)
-#                            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-#                            ''', (
-#                                calc_data['user_id'],
-#                                calc_data['username'],
-#                                calc_data['vehicle_type'],
-#                                calc_data['cost'],
-#                                calc_data['currency'],
-#                                calc_data['additional'],
-#                                calc_data['total_uah'],
-#                                calc_data['duty'],
-#                                calc_data['excise'],
-#                                calc_data['vat'],
-#                                calc_data['pension'],
-#                                calc_data['total_payments']
-#                            ))
-#             conn.commit()
-#             logger.info(f"✅ Розрахунок збережено для користувача {calc_data['user_id']}")
-#     except Exception as e:
-#         logger.error(f"❌ Помилка збереження у БД: {e}")
+
+async def save_calculation_to_db(calc_data: dict):
+    try:
+        pool = await get_pool()
+        async with pool.acquire() as conn:
+            await conn.execute("""
+                INSERT INTO calculations (
+                    user_id, username, vehicle_type, cost, currency, additional,
+                    total_uah, duty, excise, vat, pension, total_payments,
+                    year, engine_volume, battery_kwh, usd_rate, eur_rate, total_customs
+                )
+                VALUES (
+                    $1, $2, $3, $4, $5, $6,
+                    $7, $8, $9, $10, $11, $12,
+                    $13, $14, $15, $16, $17, $18
+                )
+            """,
+                calc_data['user_id'],
+                calc_data['username'],
+                calc_data['vehicle_type'],
+                calc_data['cost'],
+                calc_data['currency'],
+                calc_data['additional'],
+                calc_data['total_uah'],
+                calc_data['duty'],
+                calc_data['excise'],
+                calc_data['vat'],
+                calc_data['pension'],
+                calc_data['total_payments'],
+                calc_data['year'],
+                calc_data['engine_volume'],
+                calc_data['battery_kwh'],
+                calc_data['usd_rate'],
+                calc_data['eur_rate'],
+                calc_data['total_customs'],
+            )
+        logger.info(f"✅ Розрахунок збережено для користувача {calc_data['user_id']}")
+    except Exception as e:
+        logger.error(f"❌ Помилка збереження у БД (PostgreSQL): {e}")
 
 
 async def perform_calculation(message: types.Message, state: FSMContext, date: datetime):
@@ -1670,6 +1258,63 @@ async def perform_calculation(message: types.Message, state: FSMContext, date: d
 
     await message.answer(response, parse_mode="HTML", reply_markup=get_main_menu())
 
+    # # Saving to the database and memory
+    # calc_data = {
+    #     'user_id': message.from_user.id,
+    #     'username': message.from_user.username or '',
+    #     'vehicle_type': vehicle_type,
+    #     'cost': cost,
+    #     'currency': currency,
+    #     'additional': additional,
+    #     'total_uah': total_uah,
+    #     'duty': duty,
+    #     'excise': excise_uah,
+    #     'vat': vat,
+    #     'pension': pension,
+    #     'total_payments': total_payments,
+    #     'year': data.get('year'),
+    #     'engine_volume': data.get('engine_volume'),
+    #     'battery_kwh': data.get('battery_kwh'),
+    #     'usd_rate': usd_rate,
+    #     'eur_rate': eur_rate,
+    #     'total_customs': total_customs,
+    #     'date': datetime.now().strftime('%d.%m.%Y %H:%M')
+    # }
+    #
+    # # Saving to local memory
+    # calculations_db.append(calc_data)
+    #
+    # # Saving to SQLite
+    # try:
+    #     with get_db() as conn:
+    #         cursor = conn.cursor()
+    #         cursor.execute('''
+    #                        INSERT INTO calculations
+    #                        (user_id, username, vehicle_type, cost, currency, additional,
+    #                         total_uah, duty, excise, vat, pension, total_payments,
+    #                         year, engine_volume, battery_kwh, usd_rate, eur_rate, total_customs)
+    #                        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    #                        ''', (
+    #                            calc_data['user_id'],
+    #                            calc_data['username'],
+    #                            calc_data['vehicle_type'],
+    #                            calc_data['cost'],
+    #                            calc_data['currency'],
+    #                            calc_data['additional'],
+    #                            calc_data['total_uah'],
+    #                            calc_data['duty'],
+    #                            calc_data['excise'],
+    #                            calc_data['vat'],
+    #                            calc_data['pension'],
+    #                            calc_data['total_payments'],
+    #                            calc_data['year'], calc_data['engine_volume'], calc_data['battery_kwh'],
+    #                            calc_data['usd_rate'], calc_data['eur_rate'], calc_data['total_customs']
+    #                        ))
+    #         conn.commit()
+    #         logger.info(f"✅ Розрахунок збережено для користувача {calc_data['user_id']}")
+    # except Exception as e:
+    #     logger.error(f"❌ Помилка збереження у БД: {e}")
+
     # Saving to the database and memory
     calc_data = {
         'user_id': message.from_user.id,
@@ -1690,42 +1335,15 @@ async def perform_calculation(message: types.Message, state: FSMContext, date: d
         'usd_rate': usd_rate,
         'eur_rate': eur_rate,
         'total_customs': total_customs,
-        'date': datetime.now().strftime('%d.%m.%Y %H:%M')
+        'date': datetime.now().strftime('%d.%m.%Y %H:%M'),
     }
 
-    # Saving to local memory
+    # локальная память (как резерв)
     calculations_db.append(calc_data)
 
-    # Saving to SQLite
-    try:
-        with get_db() as conn:
-            cursor = conn.cursor()
-            cursor.execute('''
-                           INSERT INTO calculations
-                           (user_id, username, vehicle_type, cost, currency, additional,
-                            total_uah, duty, excise, vat, pension, total_payments,
-                            year, engine_volume, battery_kwh, usd_rate, eur_rate, total_customs)
-                           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                           ''', (
-                               calc_data['user_id'],
-                               calc_data['username'],
-                               calc_data['vehicle_type'],
-                               calc_data['cost'],
-                               calc_data['currency'],
-                               calc_data['additional'],
-                               calc_data['total_uah'],
-                               calc_data['duty'],
-                               calc_data['excise'],
-                               calc_data['vat'],
-                               calc_data['pension'],
-                               calc_data['total_payments'],
-                               calc_data['year'], calc_data['engine_volume'], calc_data['battery_kwh'],
-                               calc_data['usd_rate'], calc_data['eur_rate'], calc_data['total_customs']
-                           ))
-            conn.commit()
-            logger.info(f"✅ Розрахунок збережено для користувача {calc_data['user_id']}")
-    except Exception as e:
-        logger.error(f"❌ Помилка збереження у БД: {e}")
+    # сохранение в Supabase (PostgreSQL)
+    await save_calculation_to_db(calc_data)
+
 
 @dp.message(Command("start"))
 async def cmd_start(message: types.Message, state: FSMContext):
@@ -1759,7 +1377,6 @@ async def show_pension_info(message: types.Message):
     await message.answer(info, parse_mode="HTML")
 
 
-# History Export Handler (Developer Only)
 @dp.message(Command("export"))
 async def export_history(message: types.Message):
     """Exporting payment history to CSV (developer only)"""
@@ -1767,38 +1384,87 @@ async def export_history(message: types.Message):
         return
 
     try:
-        with get_db() as conn:
-            cursor = conn.cursor()
-            cursor.execute('''
-                           SELECT *
-                           FROM calculations
-                           ORDER BY created_at DESC
-                           ''')
-
-            rows = cursor.fetchall()
+        pool = await get_pool()
+        async with pool.acquire() as conn:
+            rows = await conn.fetch("""
+                SELECT id, user_id, username, vehicle_type, cost, currency,
+                       total_uah, total_payments, created_at
+                FROM calculations
+                ORDER BY created_at DESC
+            """)
 
         if not rows:
             await message.answer("No data available for export")
             return
 
-        # Создание CSV
+        # CSV header
         csv_content = "ID,User_ID,Username,Vehicle_Type,Cost,Currency,Total_UAH,Total_Payments,Date\n"
-        for row in rows:
-            csv_content += f"{row['id']},{row['user_id']},{row['username']},{row['vehicle_type']},"
-            csv_content += f"{row['cost']},{row['currency']},{row['total_uah']:.2f},"
-            csv_content += f"{row['total_payments']:.2f},{row['created_at']}\n"
 
-        # Sending a file
+        # CSV rows
+        for row in rows:
+            csv_content += (
+                f"{row['id']},"
+                f"{row['user_id']},"
+                f"{row['username'] or ''},"
+                f"{row['vehicle_type']},"
+                f"{row['cost']},"
+                f"{row['currency']},"
+                f"{row['total_uah']:.2f},"
+                f"{row['total_payments']:.2f},"
+                f"{row['created_at']}\n"
+            )
+
+        # Convert to file
         from io import BytesIO
-        file = BytesIO(csv_content.encode('utf-8'))
+        file = BytesIO(csv_content.encode("utf-8"))
 
         await message.answer_document(
             types.BufferedInputFile(file.getvalue(), filename="calculations.csv"),
             caption="📊 Експорт усіх розрахунків"
         )
+
     except Exception as e:
         await message.answer(f"❌ Помилка експорту: {str(e)}")
 
+@dp.message(Command("export_xlsx"))
+async def export_xlsx(message: types.Message):
+    if message.from_user.id != DEVELOPER_ID:
+        return
+
+    pool = await get_pool()
+    async with pool.acquire() as conn:
+        rows = await conn.fetch("""
+            SELECT *
+            FROM calculations
+            ORDER BY created_at DESC
+        """)
+
+    if not rows:
+        await message.answer("Немає даних для експорту")
+        return
+
+    from openpyxl import Workbook
+    from io import BytesIO
+
+    wb = Workbook()
+    ws = wb.active
+    ws.title = "Calculations"
+
+    # Заголовки
+    ws.append(list(rows[0].keys()))
+
+    # Данные
+    for row in rows:
+        ws.append(list(row.values()))
+
+    file = BytesIO()
+    wb.save(file)
+    file.seek(0)
+
+    await message.answer_document(
+        types.BufferedInputFile(file.read(), filename="calculations.xlsx"),
+        caption="📘 Експорт у Excel"
+    )
 
 # Callback handler "Back"
 @dp.callback_query(F.data == "back_main")
@@ -1818,7 +1484,7 @@ async def main():
     """Launching the bot"""
     # Инициализация БД
     try:
-        init_db()
+        await init_db()
         logger.info("✅ The database has been initialized.")
     except Exception as e:
         logger.warning(f"⚠️ Failed to initialize the database: {e}")

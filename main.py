@@ -2,7 +2,7 @@ import os
 import asyncio
 from fastapi import FastAPI, Request
 from aiogram.types import Update
-from customs_calculator_bot import dp, bot
+from customs_calculator_bot import dp, bot, init_db
 
 app = FastAPI()
 
@@ -21,6 +21,7 @@ async def telegram_webhook(request: Request):
 async def on_startup():
     webhook_url = f"https://{os.getenv('KOYEB_APP_URL')}/webhook"
     await bot.set_webhook(webhook_url)
+    await init_db()
 
 
 
