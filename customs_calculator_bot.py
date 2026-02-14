@@ -1467,6 +1467,23 @@ async def export_xlsx(message: types.Message):
         caption="📘 Експорт у Excel"
     )
 
+@dp.message(Command("clear_db"))
+async def clear_db(message: types.Message):
+    if message.from_user.id != DEVELOPER_ID:
+        await message.answer("⛔ У вас немає прав для виконання цієї команди.")
+        return
+
+    try:
+        pool = await get_pool()
+        async with pool.acquire() as conn:
+            await conn.execute("DELETE FROM calculations")
+        await message.answer("🗑️ Базу даних очищено повністю.")
+        logger.warning("⚠️ Developer cleared the calculations table.")
+    except Exception as e:
+        await message.answer("❌ Помилка очищення бази даних.")
+        logger.error(f"Помилка очищення БД: {e}")
+
+
 # Callback handler "Back"
 @dp.callback_query(F.data == "back_main")
 async def back_to_main(callback: types.CallbackQuery, state: FSMContext):
