@@ -556,7 +556,6 @@ async def show_history(message: types.Message):
     await message.answer(history_text, parse_mode="HTML")
 
 
-
 # Statistics Handler (for developer only)
 @dp.message(Command("stats"))
 async def show_stats(message: types.Message):
