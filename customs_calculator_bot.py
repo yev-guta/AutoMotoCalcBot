@@ -470,7 +470,7 @@ async def contact_developer(message: types.Message):
         f"💬 Зв'язатися з розробником: @EvGT_7"
     )
 
-@dp.message(F.text.contains("Історія розрахунків"))
+@dp.message(F.text.contains("Історія"))
 async def show_history(message: types.Message):
     """Show user payment history (last 5 calculations)"""
     user_id = message.from_user.id
