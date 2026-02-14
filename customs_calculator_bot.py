@@ -473,7 +473,8 @@ async def contact_developer(message: types.Message):
 @dp.message(F.text.contains("Історія"))
 async def show_history(message: types.Message):
     """Show user payment history (last 5 calculations)"""
-    user_id = message.from_user.id
+    #user_id = message.from_user.id
+    user_id = message.chat.id
 
     try:
         pool = await get_pool()
@@ -1316,7 +1317,8 @@ async def perform_calculation(message: types.Message, state: FSMContext, date: d
 
     # Saving to the database and memory
     calc_data = {
-        'user_id': message.from_user.id,
+        #'user_id': message.from_user.id,
+        'user_id': message.chat.id,
         'username': message.from_user.username or '',
         'vehicle_type': vehicle_type,
         'cost': cost,
